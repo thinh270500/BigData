@@ -1,0 +1,136 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-master
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    environment:
+      - CLUSTER_NAME=bigdata
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-slave1
+    depends_on:
+      - namenode
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_datanode1:/hadoop/dfs/data
+
+  datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-slave2
+    depends_on:
+      - namenode
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_datanode2:/hadoop/dfs/data
+
+  postgres:
+    image: postgres:13
+    container_name: hive-postgres
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d metastore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2
+    container_name: hive-metastore
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - namenode
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - ./hive/conf/hive-site.xml:/opt/hive/conf/hive-site.xml
+    environment:
+      - HIVE_CORE_CONF_fs_defaultFS=hdfs://hadoop-master:9000
+      # 🔥 4 DÒNG QUYẾT ĐỊNH ÉP NÓ NHẬN POSTGRES CHÍNH XÁC:
+      - DB_DRIVER=postgresql
+      - DB_HOST=hive-postgres
+      - DB_USER=hive
+      - DB_PASS=hive
+    command: /opt/hive/bin/hive --service metastore
+    ports:
+      - "9083:9083"
+
+  hive-server:
+    image: bde2020/hive:2.3.2
+    container_name: hive-server
+    restart: unless-stopped
+    depends_on:
+      - hive-metastore
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - ./hive/conf/hive-site.xml:/opt/hive/conf/hive-site.xml
+    environment:
+      - HIVE_CORE_CONF_fs_defaultFS=hdfs://hadoop-master:9000
+      # 🔥 Đồng bộ sang bên này để HiveServer2 biết đường tìm DB:
+      - DB_DRIVER=postgresql
+      - DB_HOST=hive-postgres
+      - DB_USER=hive
+      - DB_PASS=hive
+    command: /opt/hive/bin/hive --service hiveserver2
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+
+  nifi:
+    image: apache/nifi:1.23.2
+    container_name: nifi-server
+    ports:
+      - "8080:8080"
+    environment:
+      - NIFI_WEB_HTTP_PORT=8080
+    depends_on:
+      - namenode
+    volumes:
+      - /home/raviel/bigdata-project/realtime-data:/opt/nifi/nifi-current/realtime-data
+
+      - /home/raviel/bigdata-project/nifi_conf:/opt/nifi/nifi-current/conf
+
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    volumes:
+      - /home/raviel/bigdata-project/3_spark_jobs:/opt/spark/jobs
+    command: /opt/spark/sbin/../bin/spark-class org.apache.spark.deploy.master.Master
+
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker-1
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    command: /opt/spark/sbin/../bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode1:
+  hadoop_datanode2:
+  postgres_data:
+  hive_metastore_data:

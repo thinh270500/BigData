@@ -1,0 +1,37 @@
+Spark 
+5a
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_5a_top_k_all_time.py 5
+
+5b
+
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_5b_top_k_by_month.py 5 202101
+
+5c
+
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_5c_revenue_by_product.py
+
+5d
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_5d_revenue_by_shop.py 202101
+
+6a checker
+
+# Kiểm tra đối chiếu Câu 5a (Lấy Top 5)
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_6a_check_5a.py 5
+
+
+6c checker
+
+# Kiểm tra đối chiếu Câu 5c
+docker exec -it spark-master /opt/spark/bin/spark-submit \
+  --master spark://spark-master:7077 \
+  /opt/spark/jobs/job_6c_check_5c.py

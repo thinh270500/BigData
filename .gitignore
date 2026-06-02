@@ -1,0 +1,10 @@
+# Bỏ qua thư mục dữ liệu khổng lồ
+data/
+realtime-data/
+
+# Các file hệ thống/rác
+.venv/
+__pycache__/
+*.jar
+*.log
+.DS_Store
