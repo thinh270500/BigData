@@ -17,4 +17,8 @@ if __name__ == "__main__":
         .orderBy(desc("Total_Revenue"))
         
     df_revenue_prod.show(truncate=False)
+    df_revenue_prod.write \
+    .mode("overwrite") \
+    .option("header","true") \
+    .csv("hdfs://hadoop-master:9000/output/cau5c")
     spark.stop()

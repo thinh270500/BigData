@@ -23,4 +23,9 @@ if __name__ == "__main__":
         .limit(K)
         
     top_products.show(truncate=False)
+    top_products.write \
+    .mode("overwrite") \
+    .option("header","true") \
+    .csv("hdfs://hadoop-master:9000/output/cau5a")
+    
     spark.stop()

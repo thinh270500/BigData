@@ -1,32 +1,79 @@
 import sys
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, sum as _sum, input_file_name, regexp_extract
+from pyspark.sql.functions import (
+    col,
+    sum as _sum,
+    substring,
+    length,
+    expr
+)
 
 if __name__ == "__main__":
+
     if len(sys.argv) < 2:
-        print("Lỗi: Thiếu tham số thời điểm D! Cú pháp: spark-submit job_5d_revenue_by_shop.py <YYYYMM>")
+        print("Usage: spark-submit job_5d_revenue_by_shop.py <YYYYMM>")
         sys.exit(1)
-        
+
     D = sys.argv[1]
 
-    spark = SparkSession.builder.appName("Spark-Job-5d").getOrCreate()
+    spark = SparkSession.builder \
+        .appName("Job-5d-Revenue-By-Shop") \
+        .getOrCreate()
+
     spark.sparkContext.setLogLevel("WARN")
 
-    hdfs_path = "hdfs://hadoop-master:9000/data/*"
-    df_raw = spark.read.format("csv").option("header", "false").option("inferSchema", "true").load(hdfs_path)
-    df = df_raw.toDF("OrderID", "ProductID", "ProductName", "Amount", "Price", "Discount")
+    df = spark.read.csv(
+        "hdfs://hadoop-master:9000/data/*",
+        header=True,
+        inferSchema=True
+    )
 
-    # Trích xuất ShopID và YearMonth từ tên file nguồn
-    df_enhanced = df.withColumn("file_name", input_file_name()) \
-                    .withColumn("ShopID", regexp_extract(col("file_name"), r"Shop-(\d+)", 1)) \
-                    .withColumn("YearMonth", regexp_extract(col("file_name"), r"(\d{6})", 1))
+    df = df.withColumn(
+        "OrderID_str",
+        col("OrderID").cast("string")
+    )
 
-    print(f"\n=== [CÂU 5d] DOANH THU CỦA TỪNG SHOP TRONG THÁNG {D} ===")
-    df_revenue_shop = df_enhanced.filter(col("YearMonth") == D) \
-        .withColumn("Revenue", col("Amount") * col("Price") - col("Discount")) \
-        .groupBy("ShopID") \
-        .agg(_sum("Revenue").alias("Shop_Revenue")) \
-        .orderBy(col("ShopID").cast("int"))
-        
-    df_revenue_shop.show(df_revenue_shop.count(), truncate=False)
+    # YYYYMM
+    df = df.withColumn(
+        "YearMonth",
+        substring(col("OrderID_str"), 2, 6)
+    )
+
+    # ShopID
+    # OrderID dài 16 ký tự -> ShopID 2 chữ số
+    # OrderID dài 15 ký tự -> ShopID 1 chữ số
+
+    df = df.withColumn(
+        "ShopID",
+        expr("""
+            CASE
+                WHEN length(OrderID_str)=16
+                    THEN substring(OrderID_str,1,2)
+                ELSE
+                    substring(OrderID_str,1,1)
+            END
+        """)
+    )
+
+    df = df.withColumn(
+        "Revenue",
+        col("Amount") * col("Price") - col("Discount")
+    )
+
+    result = (
+        df.filter(col("YearMonth") == D)
+          .groupBy("ShopID")
+          .agg(_sum("Revenue").alias("Shop_Revenue"))
+          .orderBy(col("ShopID").cast("int"))
+    )
+
+    print(f"\n=== DOANH THU CAC SHOP THANG {D} ===")
+
+    result.show(100, truncate=False)
+    result.write \
+      .mode("overwrite") \
+      .option("header", "true") \
+      .csv("hdfs://hadoop-master:9000/output/cau5d")
+
     spark.stop()

@@ -1,31 +1,59 @@
 import sys
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, sum as _sum, desc, input_file_name, regexp_extract
+from pyspark.sql.functions import (
+    col,
+    sum as _sum,
+    desc,
+    substring,
+    length
+)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Lỗi: Thiếu tham số! Cú pháp: spark-submit job_5b_top_k_by_month.py <K> <YYYYMM>")
-        sys.exit(1)
-        
-    K = int(sys.argv[1])
-    D = sys.argv[2] # Ví dụ: "202101"
 
-    spark = SparkSession.builder.appName("Spark-Job-5b").getOrCreate()
+    if len(sys.argv) < 3:
+        print("Usage: spark-submit job_5b_top_k_by_month.py <K> <YYYYMM>")
+        sys.exit(1)
+
+    K = int(sys.argv[1])
+    D = sys.argv[2]
+
+    spark = SparkSession.builder \
+        .appName("Job-5b-TopK-By-Month") \
+        .getOrCreate()
+
     spark.sparkContext.setLogLevel("WARN")
 
-    hdfs_path = "hdfs://hadoop-master:9000/data/*"
-    df_raw = spark.read.format("csv").option("header", "false").option("inferSchema", "true").load(hdfs_path)
-    df = df_raw.toDF("OrderID", "ProductID", "ProductName", "Amount", "Price", "Discount")
+    df = spark.read.csv(
+        "hdfs://hadoop-master:9000/data/*",
+        header=True,
+        inferSchema=True
+    )
 
-    # Trích xuất tháng năm YYYYMM từ tên file nguồn gộp của NiFi
-    df_enhanced = df.withColumn("YearMonth", regexp_extract(input_file_name(), r"(\d{6})", 1))
+    df = df.withColumn(
+        "OrderID_str",
+        col("OrderID").cast("string")
+    )
 
-    print(f"\n=== [CÂU 5b] TOP {K} SẢN PHẨM BÁN CHẠY NHẤT TRONG THÁNG {D} ===")
-    top_products_at_time = df_enhanced.filter(col("YearMonth") == D) \
-        .groupBy("ProductID", "ProductName") \
-        .agg(_sum("Amount").alias("Total_Amount")) \
-        .orderBy(desc("Total_Amount")) \
-        .limit(K)
-        
-    top_products_at_time.show(truncate=False)
+    # lấy YYYYMM từ OrderID
+    df = df.withColumn(
+        "YearMonth",
+        substring(col("OrderID_str"), 2, 6)
+    )
+
+    result = (
+        df.filter(col("YearMonth") == D)
+          .groupBy("ProductID", "ProductName")
+          .agg(_sum("Amount").alias("Total_Amount"))
+          .orderBy(desc("Total_Amount"))
+          .limit(K)
+    )
+
+    print(f"\n=== TOP {K} SAN PHAM THANG {D} ===")
+
+    result.show(truncate=False)
+    result.write \
+      .mode("overwrite") \
+      .option("header", "true") \
+      .csv("hdfs://hadoop-master:9000/output/cau5b")
+
     spark.stop()
